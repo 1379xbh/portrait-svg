@@ -1,0 +1,13 @@
+.venv/
+.env
+.env.*
+!.env.example
+__pycache__/
+outputs/
+web/node_modules/
+web-server.*.log
+*.log
+*.pem
+*.key
+.pytest_cache/
+.DS_Store

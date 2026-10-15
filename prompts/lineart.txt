@@ -1,0 +1,13 @@
+Convert the reference photograph into a white-background black-line portrait.
+Preserve the person's likeness, facial proportions, viewpoint, expression, visible ears,
+hairstyle, glasses and main clothing silhouette. Remove scenery, people in the background,
+photographic texture, lens reflections, shading and lettering.
+Use few smooth continuous contours: complete head and hair silhouette, a clear fringe
+boundary, at most 3 principal hair locks, cheek and jaw contour, nose wings, lips and eyelids.
+Glasses rims must be closed, smoothly connected to the bridge. Keep face and hair outlines
+recognizable; do not simplify them into a generic oval and cap. Respect occlusion and keep
+hair separated from eyebrow lines. No stray marks, dense hatching, tiny eyelashes, fine
+hair strands or solid black hair. Black pupils and moderately heavier upper glasses rims
+are acceptable. Retain shoulders, neckline and backpack straps if present. No watermark.
+
+Use one simple smooth outline per eyebrow, no eyebrow hair strokes. Keep ties unpatterned: only knot and exterior silhouette, no checks or stripes. Limit hair to the outer silhouette, fringe boundary and at most 3 principal lock curves. Preserve complete glasses rims and facial outline.

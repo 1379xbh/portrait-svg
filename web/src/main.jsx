@@ -1,0 +1,66 @@
+import React,{useEffect,useRef,useState} from 'react';
+import {createRoot} from 'react-dom/client';
+import {ArrowUpRight,ArrowRight,UploadSimple,DownloadSimple,ImageSquare,Code,BracketsCurly,Check,WarningCircle,Cpu,Sparkle,PenNib,Copy,ArrowsOut,Minus,Plus} from '@phosphor-icons/react';
+import './style.css';
+
+const modes=[{id:'local',name:'纯本地',sub:'CPU 离线处理',icon:Cpu},{id:'full',name:'AI 绘制',sub:'AI 出图 · 本地转矢量',icon:Sparkle},{id:'lineart',name:'已有线稿',sub:'本地直接转矢量',icon:PenNib}];
+const detailNames={clean:'保留细节',contour:'轮廓重建',minimal:'精简线条',faithful:'忠实提线'};
+function useBlob(data,type){const [url,setUrl]=useState('');useEffect(()=>{if(!data){setUrl('');return;}const url=URL.createObjectURL(data instanceof Blob?data:new Blob([data],{type}));setUrl(url);return()=>URL.revokeObjectURL(url);},[data,type]);return url;}
+function App(){
+ const [mode,setMode]=useState('local'),[detail,setDetail]=useState('clean'),[remove,setRemove]=useState(true),[simplify,setSimplify]=useState(true);
+ const [budget,setBudget]=useState(24),[fitError,setFitError]=useState(.9);
+ const [file,setFile]=useState(null),[result,setResult]=useState(null),[drawing,setDrawing]=useState(null),[sample,setSample]=useState(false);
+ const [busy,setBusy]=useState(false),[elapsed,setElapsed]=useState(0),[error,setError]=useState(''),[notice,setNotice]=useState('');
+ const [config,setConfig]=useState(null),[token,setToken]=useState(''),[tab,setTab]=useState('preview'),[zoom,setZoom]=useState(1),[copied,setCopied]=useState(false),[drag,setDrag]=useState(false);
+ const input=useRef(null),timer=useRef(null),preview=useRef(null);
+ const photoUrl=useBlob(file),svgUrl=useBlob(result?.svg,'image/svg+xml'),drawingUrl=useBlob(drawing),jsonText=result?JSON.stringify(result.document,null,2):'';
+ const jsonUrl=useBlob(jsonText,'application/json');
+ useEffect(()=>{fetch('/v1/ui-config').then(r=>r.ok?r.json():Promise.reject()).then(setConfig).catch(()=>setError('无法连接服务，请确认后端已经启动。'));},[]);
+ useEffect(()=>()=>clearInterval(timer.current),[]);
+ useEffect(()=>{const warn=e=>{if(busy){e.preventDefault();e.returnValue='';}};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[busy]);
+ const headers=()=>token?{Authorization:`Bearer ${token}`} : {};
+ async function api(url,options={}){const r=await fetch(url,{...options,headers:{...headers(),...options.headers}});if(!r.ok){let d;try{d=await r.json();}catch{}const raw=typeof d?.detail==='string'?d.detail:d?.detail?.message;const messages={401:'服务令牌不正确，请展开「服务连接」检查。',413:'图片超过 12 MB，请缩小后重试。',429:'服务正在处理另一张图片，请稍后重试。',503:'当前流程尚未配置，请检查 .env 中的模型或本地 Python 设置。',502:mode==='local'?'本地处理失败，请检查运行环境，或换用正脸照片。':'模型生成失败，请检查服务配置、额度或换一张照片。',504:'处理超时，请稍后重试。',400:'无法处理这张图片，请使用有效的 JPG、PNG 或 WebP 文件。'};throw new Error(messages[r.status]||raw||`请求失败（${r.status}）`);}return r;}
+ function accept(f){if(busy||!f)return;if(!['image/jpeg','image/png','image/webp'].includes(f.type)){setError('请选择 JPG、PNG 或 WebP 图片。');return;}if(f.size>12*1024*1024){setError('图片超过 12 MB，请缩小后重试。');return;}setFile(f);setResult(null);setDrawing(null);setSample(false);setError('');setNotice('');setTab('preview');setZoom(1);}
+ async function generate(e){e.preventDefault();if(!file||busy)return;setBusy(true);setError('');setNotice('');setResult(null);setDrawing(null);setSample(false);setTab('preview');setZoom(1);setElapsed(0);const start=Date.now();timer.current=setInterval(()=>setElapsed(Math.floor((Date.now()-start)/1000)),1000);
+  try{const form=new FormData();form.append('image',file);form.append('mode',mode);form.append('local_detail',detail);form.append('detail_budget',String(budget));form.append('fit_error',String(fitError));form.append('remove_background',String(remove));form.append('simplify_details',String(simplify));const response=await api('/v1/portraits',{method:'POST',body:form});const data=await response.json();setResult(data);setNotice(`已生成 SVG 和 JSON，可预览或下载。${data.timings?.vectorize_seconds!==undefined?` 本地转 SVG ${data.timings.vectorize_seconds.toFixed(2)} 秒。`:''}`);try{const r=await api(data.files['lineart.png']);setDrawing(await r.blob());}catch{setNotice('SVG 和 JSON 已生成；中间线稿未能加载。');}}catch(e){setError(e.message||'连接中断，请检查服务是否运行。');}finally{clearInterval(timer.current);setElapsed(Math.floor((Date.now()-start)/1000));setBusy(false);}}
+ async function loadSample(){if(busy)return;setError('');setBusy(true);setNotice('');try{const [s,j,p]=await Promise.all([api('/v1/example/portrait.svg'),api('/v1/example/portrait.json'),api('/v1/example/lineart.png')]);setResult({svg:await s.text(),document:await j.json()});setDrawing(await p.blob());setFile(null);setSample(true);setTab('preview');setZoom(1);setElapsed(0);setNotice('正在查看已有示例，本次没有调用模型。');}catch(e){setError(e.message);}finally{setBusy(false);}}
+ async function copy(){try{await navigator.clipboard.writeText(tab==='json'?jsonText:result.svg);setCopied(true);setTimeout(()=>setCopied(false),1600);}catch{setError('浏览器未允许复制，可以直接下载文件。');}}
+ const count=result?new DOMParser().parseFromString(result.svg,'image/svg+xml').querySelectorAll('path').length:0;
+ return <div className="app-shell">
+  <header className="topbar"><a className="brand" href="/"><span className="brand-mark"><PenNib size={23}/></span><strong>几笔</strong><span className="brand-divider"/><span className="brand-caption">人像线稿工作台</span></a><div className="top-actions"><span className="connection"><i/>{config?'本地服务已连接':'连接服务中'}</span><a href="/docs" target="_blank" rel="noreferrer">API 文档 <ArrowUpRight size={14}/></a></div></header>
+  <main className="mx-auto max-w-[1400px] px-4 md:px-8">
+   <section className="intro"><div><div className="eyebrow">PORTRAIT TO LINES</div><h1>让照片，留下轮廓<span>。</span></h1><p>从一张人像开始，得到可编辑的 SVG 和 JSON。</p></div></section>
+   <div className="workspace">
+    <form className="controls" onSubmit={generate}><fieldset disabled={busy}>
+     <div className="section-label"><span>01</span><h2>上传图片</h2></div>
+     <input ref={input} id="photo-input" className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>{accept(e.target.files[0]);e.target.value='';}}/>
+     <button type="button" className={`dropzone ${drag?'dragging':''}`} onClick={()=>input.current.click()} onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);accept(e.dataTransfer.files[0]);}} aria-label="选择或拖入人像照片">
+      {file?<><img className="upload-thumb" src={photoUrl} alt="已选择的照片"/><strong className="file-name">{file.name}</strong><span>点击更换 · {(file.size/1024/1024).toFixed(1)} MB</span></>:<><span className="upload-icon"><UploadSimple size={25}/></span><strong>点击上传，或拖入照片</strong><span>JPG / PNG / WebP · 最大 12 MB</span></>}
+     </button>
+     <div className="section-label second"><span>02</span><h2>选择生成方式</h2></div>
+     <div className="mode-list">{modes.map(({id,name,sub,icon:Icon})=><label className={`mode-option ${mode===id?'selected':''}`} key={id}><input type="radio" name="mode" value={id} checked={mode===id} onChange={()=>{setMode(id);setError('');}}/><Icon size={21}/><span><strong>{name}</strong><small>{sub}</small></span><span className="radio-dot">{mode===id&&<span/>}</span></label>)}</div>
+     {mode==='local'?<div className="local-options"><label className="field-label" htmlFor="detail">线条风格</label><select id="detail" value={detail} onChange={e=>setDetail(e.target.value)}>{Object.entries(detailNames).map(([id,name])=><option key={id} value={id}>{name}</option>)}</select><label className="field-label" htmlFor="budget">次要线条上限：{budget}</label><input id="budget" type="range" min="0" max="80" value={budget} disabled={detail==='faithful'} onChange={e=>setBudget(Number(e.target.value))}/><p className="help">五官和主体结构受保护；忠实提线不使用预算。</p><label className="field-label" htmlFor="fit-error">曲线误差：{fitError.toFixed(1)} 像素</label><input id="fit-error" type="range" min="0.2" max="2" step="0.1" value={fitError} onChange={e=>setFitError(Number(e.target.value))}/><p className="help">数值越小越贴合，越大越平滑；五官使用更严格的误差，轮廓模式部分结构保持关键点约束。</p><label className="checkbox"><input type="checkbox" checked={remove} onChange={e=>setRemove(e.target.checked)}/><span>自动去除背景</span></label><p className="help">{detail==='contour'?'重建主要轮廓；检测到疑似镜框时自动回退到保留细节。':'照片在本机处理，不调用远程模型。戴眼镜时，保留细节通常更合适。'}</p></div>:<p className="help remote-note">{mode==='full'?'照片发送到图像模型生成线稿，再在本机转换 SVG 和 JSON。无需语言模型。':'上传黑白线稿，在本机转换 SVG 和 JSON，不调用远程模型。'}{mode==='full'?'图像生成按服务商规则计费。':''}</p>}
+     {mode!=='local'&&<div className="local-options"><label className="checkbox"><input type="checkbox" checked={simplify} onChange={e=>setSimplify(e.target.checked)}/><span>简化多余细节</span></label><p className="help">保留主体轮廓，减少眉毛细毛、短碎发和中央衣物纹理。复杂遮挡可能识别不准，可关闭对照。</p></div>}
+     {config&&!config.configured[mode]&&<div className="config-note"><WarningCircle size={16}/><span>该流程尚未配置，请先填写服务端 .env。</span></div>}
+     <details className="auth-details" open={config?.auth_required||undefined}><summary>服务连接 {config?.auth_required?'· 需要令牌':'· 可选'}</summary><label className="field-label" htmlFor="token">本地服务令牌</label><input id="token" type="password" value={token} onChange={e=>setToken(e.target.value)} autoComplete="off"/><p className="help">仅用于 SERVICE_API_KEY 验证。模型密钥在服务端配置。</p></details>
+    </fieldset>
+    <button className="generate" type="submit" disabled={!file||busy}>{busy?'正在处理…':'生成线稿'}{!busy&&<ArrowRight size={19}/>}</button>
+    <div className="output-note">输出 SVG 矢量图 + JSON 结构</div>
+    </form>
+    <section className="result-area" aria-label="预览与结果">
+     <div className="preview-header"><div className="tabs" role="tablist" aria-label="结果类型">{[['preview','画布',ImageSquare],['svg','SVG',Code],['json','JSON',BracketsCurly]].map(([id,name,Icon])=><button type="button" role="tab" aria-selected={tab===id} disabled={id!=='preview'&&!result} className={tab===id?'active':''} key={id} onClick={()=>setTab(id)}><Icon size={17}/>{name}</button>)}</div><span className="result-badge">{sample?'绘制示例':result?'已生成':busy?'处理中':'等待上传'}</span></div>
+     {tab==='preview'?<div className="canvas-content" ref={preview}>
+      <div className="source-pane"><div className="pane-caption"><span>{sample?'参考线稿':'原始照片'}</span><span>INPUT</span></div><div className="source-image">{(photoUrl||sample&&drawingUrl)?<img src={photoUrl||drawingUrl} alt={sample?'示例参考线稿':'输入照片'}/>:<div className="mini-empty"><ImageSquare size={29}/><span>上传后显示原图</span></div>}</div>{drawingUrl&&!sample&&<details className="intermediate"><summary>查看中间线稿</summary><img src={drawingUrl} alt="处理生成的中间线稿"/></details>}</div>
+      <div className="vector-pane"><div className="pane-caption"><span>矢量预览</span><span>SVG</span></div><div className={`artboard ${busy?'processing':''}`}>
+       {result?<img className="vector-image" style={{width:`${zoom*100}%`,maxWidth:'none',height:zoom>1?'auto':'100%'}} src={svgUrl} alt="生成的矢量人像"/>:busy?<div className="loading-state"><div className="skeleton-head"/><div className="skeleton-shoulders"/><strong>正在整理人像轮廓</strong><p>已等待 {elapsed} 秒 · 完成后自动显示</p><small>模型处理可能需要几分钟，请保持页面打开。</small></div>:<div className="empty-state"><span className="empty-symbol"><PenNib size={34} weight="light"/></span><h3>每一笔，都从这里开始</h3><p>上传一张照片，选择生成方式<br/>在这里查看你的矢量肖像</p></div>}
+       </div><div className="canvas-tools"><span>{result?result.metrics?`${result.metrics.visible_strokes} 个可见子路径/形状 · ${result.metrics.curve_segments} 段曲线`:`${count} 个路径 · 可缩放矢量`:'平滑曲线 / 清晰轮廓'}</span><div><button type="button" aria-label="缩小预览" onClick={()=>setZoom(z=>Math.max(.5,z-.25))} disabled={!result||zoom<=.5}><Minus size={14}/></button><span>{Math.round(zoom*100)}%</span><button type="button" aria-label="放大预览" onClick={()=>setZoom(z=>Math.min(3,z+.25))} disabled={!result||zoom>=3}><Plus size={14}/></button><button type="button" aria-label="恢复预览大小" onClick={()=>setZoom(1)} disabled={!result}><ArrowsOut size={15}/></button></div></div></div>
+     </div>:<div className="code-panel"><div className="code-toolbar"><span>{tab==='svg'?'portrait.svg':'portrait.json'}</span><button onClick={copy}>{copied?<Check size={16}/>:<Copy size={16}/>} {copied?'已复制':'复制代码'}</button></div><pre><code>{tab==='svg'?result?.svg:jsonText}</code></pre></div>}
+     <div className="result-footer"><div className="result-status" role="status" aria-live="polite">{busy?<><span className="status-dot"/>正在处理 · {elapsed}s</>:result?<><Check size={16}/>{sample?'示例文件 · 未调用模型':`处理完成 · ${elapsed}s`}</>:<><span className="status-dot muted"/>完成后可下载文件</>}</div><div className="downloads"><a className={!result?'disabled':''} href={result?svgUrl:undefined} download="portrait.svg" aria-disabled={!result} tabIndex={result?0:-1}><DownloadSimple size={16}/> SVG</a><a className={!result?'disabled':''} href={result?jsonUrl:undefined} download="portrait.json" aria-disabled={!result} tabIndex={result?0:-1}><DownloadSimple size={16}/> JSON</a></div></div>
+    </section>
+   </div>
+   {error&&<div className="message error" role="alert"><WarningCircle size={19}/>{error}</div>}{notice&&!error&&<div className="message success" role="status"><Check size={17}/>{notice}</div>}
+   <footer className="page-footer"><span>几笔 · Portrait Studio</span><span>保留轮廓，减少细节。结果可继续编辑。</span><span>SVG + JSON</span></footer>
+  </main>
+ </div>;
+}
+createRoot(document.getElementById('root')).render(<App/>);

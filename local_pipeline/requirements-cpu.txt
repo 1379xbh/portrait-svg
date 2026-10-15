@@ -1,0 +1,8 @@
+# Windows x64 / Python 3.12. Install CPU PyTorch explicitly; no CUDA package.
+--extra-index-url https://download.pytorch.org/whl/cpu
+Pillow==12.3.0
+numpy==2.5.3
+opencv-contrib-python==4.14.0.94
+scipy==1.18.1
+mediapipe==1.0.1
+torch==2.7.1+cpu
